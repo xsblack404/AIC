@@ -3,102 +3,107 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enterprise Face Recognition Cleaner</title>
-    
-    <!-- Face API JS (AI Library) -->
+    <title>Enterprise Face Recognition Cleaner V2</title>
+    <!-- TensorFlow Core (Required for memory management) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.0.0/dist/tf.min.js"></script>
+    <!-- Face API -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-    
-    <!-- Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <!-- Loading Overlay -->
     <div id="sys-loader">
         <div class="spinner"></div>
-        <h3 style="margin-top: 1rem; color: #0f172a;">Loading Biometric Models...</h3>
-        <p style="font-size: 0.8rem; color: #64748b;">Fetching Neural Networks (SSD MobileNet & FaceLandmark68)</p>
+        <h3 style="margin-top: 1rem; color: #0f172a;">Initializing Neural Engine...</h3>
+        <p style="font-size: 0.8rem; color: #64748b;">Loading SSD MobileNet V1 & FaceLandmark68</p>
     </div>
 
-    <!-- Header -->
     <header>
         <div class="logo">
-            <i class="fa-solid fa-fingerprint"></i>
+            <i class="fa-solid fa-dna"></i>
             BioSort AI
-            <span class="badge">PRO</span>
+            <span class="badge">ENTERPRISE</span>
         </div>
-        <div style="font-size: 0.85rem; color: #64748b;">
-            <i class="fa-solid fa-lock"></i> Privacy Mode: On-Device Processing
+        <div class="header-controls">
+            <i class="fa-solid fa-server"></i> GPU Accelerated
         </div>
     </header>
 
     <main>
-        <!-- Sidebar Controls -->
         <aside>
-            <!-- Step 1: Reference Face -->
-            <div>
-                <h3>1. Target Person (Reference)</h3>
+            <!-- Step 1: Multi-Shot Reference -->
+            <div class="control-group">
+                <h3>1. Training Data (Multi-Shot)</h3>
                 <div class="upload-box" id="refBox" onclick="document.getElementById('refInput').click()">
-                    <i class="fa-solid fa-user-tag"></i>
-                    <p>Upload Face to Keep</p>
-                    <input type="file" id="refInput" accept="image/*">
+                    <i class="fa-solid fa-user-shield"></i>
+                    <p>Upload Target Faces</p>
+                    <span style="font-size:0.7rem; color:#94a3b8; display:block; margin-top:5px;">Upload 1-5 photos for better accuracy</span>
+                    <input type="file" id="refInput" multiple accept="image/*">
                 </div>
-                <div class="ref-preview-container" id="refPreview">
-                    <img id="refImgElement" src="" alt="Reference Face">
-                    <div class="ref-overlay"><i class="fa-solid fa-check-circle"></i> Target Lock</div>
-                </div>
+                
+                <!-- Dynamic list of loaded faces -->
+                <div id="ref-list" class="ref-list"></div>
                 <p id="ref-status" class="status-msg"></p>
             </div>
 
-            <!-- Step 2: Batch -->
-            <div>
-                <h3>2. Batch Images</h3>
+            <!-- Step 2: Tuning -->
+            <div class="control-group">
+                <h3>2. Algorithm Tuning</h3>
+                <div class="slider-container">
+                    <label>Strictness (Euclidean Distance)</label>
+                    <input type="range" id="thresholdRange" min="0.3" max="0.8" step="0.05" value="0.5">
+                    <div class="slider-vals">
+                        <span>Strict (0.3)</span>
+                        <span id="thresh-val">0.5</span>
+                        <span>Loose (0.8)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Batch -->
+            <div class="control-group">
+                <h3>3. Batch Processing</h3>
                 <div class="upload-box" onclick="document.getElementById('batchInput').click()">
-                    <i class="fa-solid fa-images"></i>
-                    <p>Select Folder/Files</p>
+                    <i class="fa-solid fa-folder-open"></i>
+                    <p>Select Dataset</p>
                     <input type="file" id="batchInput" multiple accept="image/*">
                 </div>
                 <div id="batch-count" class="batch-count-text"></div>
             </div>
 
-            <!-- Step 3: Controls & Stats -->
+            <!-- Action Area -->
             <div style="margin-top: auto;">
                 <div class="stats-grid">
                     <div class="stat-box">
                         <div class="stat-val text-success" id="count-kept">0</div>
-                        <div class="stat-lbl">Matched</div>
+                        <div class="stat-lbl">Positive</div>
                     </div>
                     <div class="stat-box">
                         <div class="stat-val text-danger" id="count-removed">0</div>
-                        <div class="stat-lbl">No Match</div>
+                        <div class="stat-lbl">Negative</div>
                     </div>
                 </div>
                 <button id="runBtn" class="btn">
-                    <i class="fa-solid fa-bolt"></i> Start Scanning
+                    <i class="fa-solid fa-microchip"></i> Execute Analysis
                 </button>
             </div>
         </aside>
 
-        <!-- Main Content Area -->
         <div class="content">
             <div class="progress-area" id="progress-area">
                 <div class="progress-header">
-                    <strong>Analyzing Biometrics...</strong>
+                    <strong>Processing Biometric Queue...</strong>
                     <span id="prog-text">0%</span>
                 </div>
                 <div class="bar-bg"><div class="bar-fill" id="bar-fill"></div></div>
+                <div id="memory-stat" style="font-size:0.7rem; color:#94a3b8; margin-top:5px; text-align:right;">Tensors: 0</div>
             </div>
 
-            <div class="gallery" id="gallery">
-                <!-- Images injected via JS -->
-            </div>
+            <div class="gallery" id="gallery"></div>
         </div>
     </main>
 
-    <!-- Custom Logic -->
     <script src="script.js"></script>
 </body>
 </html>
