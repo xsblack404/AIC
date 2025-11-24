@@ -1,7 +1,10 @@
 // --- Configuration ---
+// Using public model weights
 const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+// Confidence threshold to consider something a face (0.5 = 50% sure)
 const MIN_DETECTION_CONFIDENCE = 0.5; 
 const FACE_MODEL_OPTS = new faceapi.SsdMobilenetv1Options({ minConfidence: MIN_DETECTION_CONFIDENCE });
+const TIMEOUT_MS = 10000; // 10 seconds max per image before skipping
 
 // --- State ---
 let labeledDescriptors = [];
@@ -9,8 +12,8 @@ let batchFiles = [];
 let matchedFiles = [];
 let currentThreshold = 0.5;
 let mode = 'any'; 
-let isProcessing = false; // Track if currently running
-let stopRequested = false; // Flag to trigger stop
+let isProcessing = false;
+let stopRequested = false;
 
 // --- Elements ---
 const loader = document.getElementById('sys-loader');
@@ -18,7 +21,7 @@ const refInput = document.getElementById('refInput');
 const refList = document.getElementById('ref-list');
 const refStatus = document.getElementById('ref-status');
 const batchInput = document.getElementById('batchInput');
-const runBtn = document.getElementById('runBtn'); // Serves as Start AND Stop
+const runBtn = document.getElementById('runBtn');
 const exportBtn = document.getElementById('exportBtn');
 const gallery = document.getElementById('gallery');
 const threshSlider = document.getElementById('thresholdRange');
@@ -30,53 +33,53 @@ const modeOptions = document.querySelectorAll('.mode-option');
 // --- Initialization ---
 async function loadModels() {
     try {
+        console.log("Loading Neural Networks...");
         await Promise.all([
             faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
             faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
             faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
         ]);
-        loader.style.display = 'none';
-        console.log("AI Models Loaded");
         
-        // FIX: Sync mode with HTML state on load (prevents button lockout on refresh)
+        loader.style.display = 'none';
+        console.log("Models Loaded Successfully");
+
+        // Sync UI with initial state
         const checkedRadio = document.querySelector('input[name="scanMode"]:checked');
         if (checkedRadio) {
-            updateMode(checkedRadio.value);
-            // Visual sync
-            modeOptions.forEach(opt => {
-                if(opt.querySelector('input').value === checkedRadio.value) {
-                    opt.classList.add('active');
-                } else {
-                    opt.classList.remove('active');
-                }
-            });
+            mode = checkedRadio.value;
+            syncModeUI(mode);
         }
+        
+        // Re-check readiness in case files were selected before models loaded
+        checkReady();
+
     } catch (e) {
-        alert("Failed to load models. Check internet.");
+        alert("Error loading AI models. Please refresh the page.");
         console.error(e);
     }
 }
 loadModels();
 
-// --- Mode Switching Logic ---
+// --- Mode Logic ---
 modeOptions.forEach(opt => {
     opt.addEventListener('click', () => {
-        // Visual toggle
-        modeOptions.forEach(o => o.classList.remove('active'));
-        opt.classList.add('active');
-        
-        // Logic toggle
-        const newVal = opt.querySelector('input').value;
-        opt.querySelector('input').checked = true; // Ensure radio is checked
-        updateMode(newVal);
+        const radio = opt.querySelector('input');
+        radio.checked = true;
+        mode = radio.value;
+        syncModeUI(mode);
     });
 });
 
-function updateMode(newMode) {
-    mode = newMode;
-    
-    // Toggle UI sections
-    if(mode === 'specific') {
+function syncModeUI(currentMode) {
+    // Update visual buttons
+    modeOptions.forEach(o => {
+        const val = o.querySelector('input').value;
+        if(val === currentMode) o.classList.add('active');
+        else o.classList.remove('active');
+    });
+
+    // Toggle sections
+    if(currentMode === 'specific') {
         refSection.style.display = 'block';
         stepLabel.textContent = '3';
     } else {
@@ -87,19 +90,19 @@ function updateMode(newMode) {
     checkReady();
 }
 
-// --- Slider Logic ---
+// --- Threshold Slider ---
 threshSlider.addEventListener('input', (e) => {
     currentThreshold = parseFloat(e.target.value);
     threshDisplay.textContent = currentThreshold;
 });
 
-// --- Reference Image Handling ---
+// --- Reference Upload (Specific Mode) ---
 refInput.addEventListener('change', async (e) => {
     const files = Array.from(e.target.files);
     if(files.length === 0) return;
 
     refStatus.style.display = 'block';
-    refStatus.textContent = "Extracting biometrics...";
+    refStatus.textContent = "Processing biometrics...";
     refStatus.style.color = "#64748b";
 
     for (const file of files) {
@@ -116,20 +119,22 @@ refInput.addEventListener('change', async (e) => {
                 thumb.className = 'ref-thumb';
                 refList.appendChild(thumb);
             }
-        } catch (err) { console.error(err); }
+        } catch (err) {
+            console.warn("Skipped a reference file (not a face or error).");
+        }
     }
 
     if (labeledDescriptors.length > 0) {
-        refStatus.textContent = `${labeledDescriptors.length} descriptors loaded.`;
+        refStatus.textContent = `${labeledDescriptors.length} Biometric IDs Locked.`;
         refStatus.style.color = "var(--success)";
-        checkReady();
     } else {
-        refStatus.textContent = "No faces found in reference.";
+        refStatus.textContent = "No valid faces found.";
         refStatus.style.color = "var(--danger)";
     }
+    checkReady();
 });
 
-// --- Batch Handling ---
+// --- Batch Input ---
 batchInput.addEventListener('change', (e) => {
     batchFiles = Array.from(e.target.files);
     document.getElementById('batch-count').textContent = `${batchFiles.length} files queued`;
@@ -140,47 +145,66 @@ batchInput.addEventListener('change', (e) => {
 });
 
 function checkReady() {
-    // If we are currently processing, don't change button state via this function
+    // Do not change button state if currently running
     if(isProcessing) return;
 
     let ready = false;
+    
     if (batchFiles.length > 0) {
         if (mode === 'any') {
-            ready = true; 
+            ready = true;
         } else {
-            // Need reference for 'specific'
+            // Specific mode requires at least one reference face
             ready = (labeledDescriptors.length > 0);
         }
     }
     
     if (ready) {
         runBtn.classList.add('active');
-        runBtn.innerHTML = `<i class="fa-solid fa-microchip"></i> Start Sorting`;
         runBtn.style.background = "var(--primary)";
+        runBtn.innerHTML = `<i class="fa-solid fa-microchip"></i> Start Sorting`;
     } else {
         runBtn.classList.remove('active');
+        runBtn.style.background = "var(--primary)";
     }
 }
 
-// --- Main AI Processing (Start/Stop Logic) ---
+// --- Helper: Timeout Wrapper ---
+const timeoutPromise = (ms, promise) => {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error("Analysis Timeout"));
+        }, ms);
+        
+        promise
+            .then(value => {
+                clearTimeout(timer);
+                resolve(value);
+            })
+            .catch(reason => {
+                clearTimeout(timer);
+                reject(reason);
+            });
+    });
+};
+
+// --- Main Process Loop ---
 runBtn.addEventListener('click', async () => {
-    // STOP LOGIC: If currently running, flag to stop
+    // HANDLE STOP REQUEST
     if (isProcessing) {
         stopRequested = true;
         runBtn.innerHTML = `<i class="fa-solid fa-hand"></i> Stopping...`;
         runBtn.style.opacity = "0.7";
-        return; // Don't start a new loop
+        return;
     }
 
-    // START LOGIC
+    // START PROCESSING
     isProcessing = true;
     stopRequested = false;
     
-    // Change Button to "Stop"
-    runBtn.classList.add('active'); // Keep active so it can be clicked
+    // UI Updates
     runBtn.innerHTML = `<i class="fa-solid fa-stop"></i> Stop Processing`;
-    runBtn.style.background = "var(--danger)"; // Turn red
-
+    runBtn.style.background = "var(--danger)";
     exportBtn.style.display = 'none';
     
     const progressArea = document.getElementById('progress-area');
@@ -194,55 +218,70 @@ runBtn.addEventListener('click', async () => {
     let removed = 0;
     matchedFiles = [];
 
-    // Loop through batch
+    // BATCH LOOP
     for (let i = 0; i < batchFiles.length; i++) {
-        // CHECK FOR STOP
+        // Stop Check
         if (stopRequested) {
-            statusDetail.textContent = "Processing Aborted by User";
+            statusDetail.textContent = "Processing Cancelled.";
             break;
         }
 
         const file = batchFiles[i];
         
-        // Progress UI
+        // Progress Bar
         const pct = Math.round(((i + 1) / batchFiles.length) * 100);
         barFill.style.width = `${pct}%`;
         progText.textContent = `${i+1}/${batchFiles.length}`;
         statusDetail.textContent = `Analyzing: ${file.name}`;
 
-        // Analyze
-        const result = await analyzeImage(file);
-        
-        if (result.match) {
-            kept++;
-            matchedFiles.push(file);
-        } else {
+        // ANALYZE with Safety Wrappers
+        try {
+            // We wrap the analysis in a specific try/catch so one bad file doesn't crash the loop
+            const result = await timeoutPromise(TIMEOUT_MS, analyzeImage(file));
+            
+            if (result.match) {
+                kept++;
+                matchedFiles.push(file);
+            } else {
+                removed++;
+            }
+            
+            addCardToGallery(result);
+
+        } catch (err) {
+            console.error(`Failed to process ${file.name}:`, err);
+            // Add a "Error" card so user knows it failed
+            addCardToGallery({
+                url: URL.createObjectURL(file), // might fail if file corrupt, but worth a try
+                name: file.name,
+                match: false,
+                meta: "Error/Timeout",
+                color: "var(--danger)"
+            });
             removed++;
         }
 
+        // Update Stats
         document.getElementById('count-kept').textContent = kept;
         document.getElementById('count-removed').textContent = removed;
 
-        addCardToGallery(result);
-
-        // UI Thread breathing room
-        await new Promise(r => setTimeout(r, 20)); 
+        // VITAL: Pause to let UI render and Garbage Collector run
+        await new Promise(r => setTimeout(r, 50));
     }
     
-    // RESET STATE
+    // FINISHED
     isProcessing = false;
     stopRequested = false;
-    progressArea.style.display = 'none';
     
-    // Restore Button
-    runBtn.innerHTML = `<i class="fa-solid fa-rotate-right"></i> Process New Batch`;
-    runBtn.style.background = "var(--primary)";
-    checkReady(); // Re-evaluate button state
-    
-    if(matchedFiles.length > 0) {
-        exportBtn.style.display = 'flex';
-        exportBtn.classList.add('active');
-    }
+    setTimeout(() => {
+        progressArea.style.display = 'none';
+        checkReady(); // Reset button to start state
+        
+        if(matchedFiles.length > 0) {
+            exportBtn.style.display = 'flex';
+            exportBtn.classList.add('active');
+        }
+    }, 1000);
 });
 
 async function analyzeImage(file) {
@@ -250,10 +289,13 @@ async function analyzeImage(file) {
     let isMatch = false;
     let scoreText = "";
     let scoreColor = "#64748b";
+    let img = null;
 
     try {
-        const img = await faceapi.bufferToImage(file);
+        // 1. Load Image
+        img = await faceapi.bufferToImage(file);
         
+        // 2. Run AI
         let detections = [];
         
         if (mode === 'specific') {
@@ -261,9 +303,11 @@ async function analyzeImage(file) {
                 .withFaceLandmarks()
                 .withFaceDescriptors();
         } else {
+            // Faster detection for 'any'
             detections = await faceapi.detectAllFaces(img, FACE_MODEL_OPTS);
         }
 
+        // 3. Logic
         if (mode === 'any') {
             if (detections.length > 0) {
                 isMatch = true;
@@ -276,6 +320,7 @@ async function analyzeImage(file) {
         else if (mode === 'specific') {
             let bestDist = 1.0;
             
+            // Compare every face detected against every reference face
             for (const detection of detections) {
                 for (const ref of labeledDescriptors) {
                     const dist = faceapi.euclideanDistance(ref, detection.descriptor);
@@ -292,11 +337,11 @@ async function analyzeImage(file) {
             else scoreText = `Diff: ${bestDist.toFixed(3)}`;
         }
 
-        img.remove(); // Cleanup DOM element
-
-    } catch (e) {
-        console.error("Error processing", file.name);
-        scoreText = "Error";
+    } catch (error) {
+        throw error; // Rethrow to be caught by the main loop
+    } finally {
+        // ALWAYS clean up memory, even if error occurred
+        if(img) img.remove();
     }
 
     return {
