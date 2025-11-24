@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise AI Photo Cleaner</title>
+    
+    <!-- TensorFlow.js and COCO-SSD Model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    
+    <!-- Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg: #f3f4f6;
+            --surface: #ffffff;
+            --text: #1f2937;
+            --border: #e5e7eb;
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+
+        body { background-color: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+
+        /* Header */
+        header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-weight: 700; font-size: 1.25rem; color: var(--primary); display: flex; align-items: center; gap: 10px; }
+        .badge { background: #dbeafe; color: var(--primary); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+
+        /* Main Layout */
+        main { flex: 1; display: grid; grid-template-columns: 300px 1fr; height: calc(100vh - 65px); }
+
+        /* Sidebar Controls */
+        aside { background: var(--surface); border-right: 1px solid var(--border); padding: 2rem; display: flex; flex-direction: column; gap: 2rem; overflow-y: auto; }
+        
+        .control-group h3 { font-size: 0.875rem; text-transform: uppercase; color: #6b7280; margin-bottom: 1rem; letter-spacing: 0.05em; }
+        
+        .upload-box {
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .upload-box:hover { border-color: var(--primary); background: #eff6ff; }
+        .upload-box i { font-size: 2rem; color: #9ca3af; margin-bottom: 0.5rem; }
+        
+        input[type="file"] { display: none; }
+
+        .btn {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 6px;
+            background: var(--primary);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        .btn.active { opacity: 1; pointer-events: all; }
+        .btn:hover { background: var(--primary-hover); }
+
+        .stats-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .stat-card { background: var(--bg); padding: 1rem; border-radius: 6px; text-align: center; }
+        .stat-num { font-size: 1.5rem; font-weight: 700; display: block; }
+        .stat-label { font-size: 0.75rem; color: #6b7280; }
+        .text-green { color: var(--success); }
+        .text-red { color: var(--danger); }
+
+        /* Content Area */
+        .content { padding: 2rem; overflow-y: auto; }
+
+        .progress-container { margin-bottom: 2rem; display: none; }
+        .progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
+        .status-text { margin-top: 0.5rem; font-size: 0.875rem; color: #6b7280; }
+
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .img-card {
+            background: var(--surface);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            position: relative;
+            transition: transform 0.2s;
+        }
+        
+        .img-card img { width: 100%; height: 150px; object-fit: cover; display: block; }
+        
+        .img-meta { padding: 1rem; }
+        .img-name { font-size: 0.875rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.25rem; }
+        .img-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+        .tag { font-size: 0.7rem; padding: 2px 6px; border-radius: 99px; background: #f3f4f6; color: #4b5563; }
+
+        .status-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: white;
+        }
+        .status-kept { background: var(--success); }
+        .status-removed { background: var(--danger); }
+
+        /* Loading Overlay */
+        #model-loader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.9); z-index: 1000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 1rem; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body>
+
+    <!-- AI Model Loading Overlay -->
+    <div id="model-loader">
+        <div class="spinner"></div>
+        <h3>Initializing Neural Network...</h3>
+        <p>Loading COCO-SSD Model into Browser Memory</p>
+    </div>
+
+    <header>
+        <div class="logo">
+            <i class="fa-solid fa-layer-group"></i>
+            CleanBatch AI
+            <span class="badge">ENTERPRISE</span>
+        </div>
+        <div style="font-size: 0.875rem; color: #6b7280;">
+            <i class="fa-solid fa-shield-halved"></i> Local Processing • No Cloud Upload
+        </div>
+    </header>
+
+    <main>
+        <aside>
+            <div class="control-group">
+                <h3>1. Upload Batch</h3>
+                <div class="upload-box" onclick="document.getElementById('fileInput').click()">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                    <p>Click to select images</p>
+                    <span style="font-size: 0.75rem; color: #9ca3af;">JPG, PNG supported</span>
+                    <input type="file" id="fileInput" multiple accept="image/*">
+                </div>
+                <div id="file-count" style="margin-top: 0.5rem; font-size: 0.875rem; text-align: center; color: var(--primary);"></div>
+            </div>
+
+            <div class="control-group">
+                <h3>2. Configuration</h3>
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" id="checkPerson" checked>
+                    <span>Keep if <strong>Person</strong> detected</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-top: 0.5rem;">
+                    <input type="checkbox" id="checkBlur" disabled>
+                    <span style="color: #9ca3af;">Check Blur (Pro only)</span>
+                </label>
+            </div>
+
+            <div class="control-group">
+                <h3>3. Action</h3>
+                <button id="processBtn" class="btn">Start Processing</button>
+                <div class="stats-panel" style="margin-top: 1rem;">
+                    <div class="stat-card">
+                        <span class="stat-num text-green" id="stat-kept">0</span>
+                        <span class="stat-label">Kept</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-num text-red" id="stat-removed">0</span>
+                        <span class="stat-label">Removed</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <div class="content">
+            <div class="progress-container" id="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <div class="status-text" id="status-text">Processing image 1 of 10...</div>
+            </div>
+
+            <div class="gallery-grid" id="gallery">
+                <!-- Images will be injected here -->
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- State Management ---
+        let model = null;
+        let selectedFiles = [];
+        let processedCount = 0;
+        let keptCount = 0;
+        let removedCount = 0;
+
+        // --- DOM Elements ---
+        const fileInput = document.getElementById('fileInput');
+        const processBtn = document.getElementById('processBtn');
+        const gallery = document.getElementById('gallery');
+        const loader = document.getElementById('model-loader');
+        const progressContainer = document.getElementById('progress-container');
+        const progressFill = document.getElementById('progress-fill');
+        const statusText = document.getElementById('status-text');
+        const statKept = document.getElementById('stat-kept');
+        const statRemoved = document.getElementById('stat-removed');
+        const fileCountDisplay = document.getElementById('file-count');
+
+        // --- Initialization ---
+        async function loadModel() {
+            try {
+                // Load COCO-SSD model
+                model = await cocoSsd.load();
+                loader.style.display = 'none';
+                console.log("Model loaded successfully");
+            } catch (error) {
+                alert("Error loading AI Model. Please refresh or check internet connection.");
+                console.error(error);
+            }
+        }
+
+        // Start loading immediately
+        loadModel();
+
+        // --- Event Listeners ---
+        fileInput.addEventListener('change', handleFileSelect);
+        processBtn.addEventListener('click', startBatchProcessing);
+
+        function handleFileSelect(e) {
+            selectedFiles = Array.from(e.target.files);
+            
+            // Reset UI
+            gallery.innerHTML = '';
+            keptCount = 0;
+            removedCount = 0;
+            updateStats();
+            
+            if (selectedFiles.length > 0) {
+                processBtn.classList.add('active');
+                fileCountDisplay.textContent = `${selectedFiles.length} files selected`;
+            } else {
+                processBtn.classList.remove('active');
+                fileCountDisplay.textContent = '';
+            }
+        }
+
+        async function startBatchProcessing() {
+            if (!model) return alert("Model not loaded yet.");
+            
+            processBtn.classList.remove('active'); // Disable button during process
+            progressContainer.style.display = 'block';
+            processedCount = 0;
+
+            // Process sequentially to prevent browser freeze
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                
+                // Update UI
+                const pct = ((i + 1) / selectedFiles.length) * 100;
+                progressFill.style.width = `${pct}%`;
+                statusText.textContent = `Analyzing ${file.name} (${i+1}/${selectedFiles.length})...`;
+
+                await processImage(file);
+                processedCount++;
+            }
+
+            statusText.textContent = "Batch processing complete.";
+            setTimeout(() => {
+                progressContainer.style.display = 'none';
+                processBtn.classList.add('active'); // Re-enable
+            }, 2000);
+        }
+
+        async function processImage(file) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                const objectUrl = URL.createObjectURL(file);
+                
+                img.src = objectUrl;
+                img.onload = async () => {
+                    // Detection Logic
+                    const predictions = await model.detect(img);
+                    
+                    // Conditions
+                    const requirePerson = document.getElementById('checkPerson').checked;
+                    let keep = true;
+                    let tags = [];
+
+                    // Extract class names detected
+                    predictions.forEach(p => {
+                        if (!tags.includes(p.class)) tags.push(p.class);
+                    });
+
+                    if (requirePerson) {
+                        const hasPerson = predictions.some(p => p.class === 'person');
+                        if (!hasPerson) keep = false;
+                    }
+
+                    // Update Stats
+                    if (keep) keptCount++; else removedCount++;
+                    updateStats();
+
+                    // Render Result
+                    renderCard(objectUrl, file.name, tags, keep);
+                    
+                    // Memory cleanup
+                    // URL.revokeObjectURL(objectUrl); // Keep for display, but in real app handle memory
+                    resolve();
+                };
+                
+                img.onerror = () => {
+                    console.error(`Failed to load image: ${file.name}`);
+                    resolve(); // Skip corrupt files
+                };
+            });
+        }
+
+        function renderCard(imgSrc, name, tags, kept) {
+            const card = document.createElement('div');
+            card.className = 'img-card';
+            card.style.opacity = kept ? '1' : '0.6';
+
+            const statusLabel = kept ? 'KEPT' : 'TRASH';
+            const statusClass = kept ? 'status-kept' : 'status-removed';
+            
+            const tagHtml = tags.length > 0 
+                ? tags.slice(0, 3).map(t => `<span class="tag">${t}</span>`).join('') 
+                : '<span class="tag">No objects</span>';
+
+            card.innerHTML = `
+                <div class="status-badge ${statusClass}">${statusLabel}</div>
+                <img src="${imgSrc}" alt="${name}">
+                <div class="img-meta">
+                    <div class="img-name" title="${name}">${name}</div>
+                    <div class="img-tags">${tagHtml}</div>
+                </div>
+            `;
+
+            gallery.appendChild(card);
+        }
+
+        function updateStats() {
+            statKept.textContent = keptCount;
+            statRemoved.textContent = removedCount;
+        }
+    </script>
+</body>
+</html>
