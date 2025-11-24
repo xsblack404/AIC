@@ -6,6 +6,7 @@
     --text: #1e293b;
     --border: #e2e8f0;
     --success: #10b981;
+    --success-hover: #059669; /* Darker green for hover */
     --danger: #ef4444;
 }
 
@@ -22,6 +23,8 @@ main { flex: 1; display: grid; grid-template-columns: 340px 1fr; height: calc(10
 aside { background: var(--surface); border-right: 1px solid var(--border); padding: 1.5rem; display: flex; flex-direction: column; gap: 2rem; overflow-y: auto; }
 
 h3 { font-size: 0.7rem; text-transform: uppercase; color: #64748b; margin-bottom: 0.75rem; font-weight: 700; letter-spacing: 0.05em; border-left: 3px solid var(--primary); padding-left: 8px; }
+
+.control-group { margin-bottom: 0.5rem; }
 
 .upload-box {
     border: 2px dashed #cbd5e1; border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc;
@@ -53,6 +56,15 @@ input[type="file"] { display: none; }
 }
 .btn.active { opacity: 1; pointer-events: all; }
 .btn:hover { background: var(--primary-hover); transform: translateY(-1px); }
+
+/* NEW: Export Button Style */
+.btn-export {
+    background: var(--success);
+    margin-top: 0.5rem;
+}
+.btn-export:hover {
+    background: var(--success-hover);
+}
 
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1rem; }
 .stat-box { background: #f8fafc; padding: 10px; border-radius: 6px; text-align: center; border: 1px solid var(--border); }
