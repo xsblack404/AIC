@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enterprise Face Recognition Cleaner V3</title>
+    <title>Enterprise Photo Sorter V4</title>
     
     <!-- AI Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.0.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     
-    <!-- Zip & Download Libraries -->
+    <!-- Zip & Download -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
@@ -21,55 +21,69 @@
     <div id="sys-loader">
         <div class="spinner"></div>
         <h3 style="margin-top: 1rem; color: #0f172a;">Initializing Neural Engine...</h3>
-        <p style="font-size: 0.8rem; color: #64748b;">Loading SSD MobileNet V1 & FaceLandmark68</p>
+        <p style="font-size: 0.8rem; color: #64748b;">Loading Model Weights (SSD MobileNet V1)</p>
     </div>
 
     <header>
         <div class="logo">
-            <i class="fa-solid fa-dna"></i>
+            <i class="fa-solid fa-layer-group"></i>
             BioSort AI
             <span class="badge">ENTERPRISE</span>
         </div>
         <div class="header-controls">
-            <i class="fa-solid fa-server"></i> GPU Accelerated
+            <i class="fa-solid fa-server"></i> Local Processing
         </div>
     </header>
 
     <main>
         <aside>
-            <!-- Step 1: Multi-Shot Reference -->
+            <!-- Step 1: Mode Selection -->
             <div class="control-group">
-                <h3>1. Training Data (Multi-Shot)</h3>
+                <h3>1. Sorting Logic</h3>
+                <div class="mode-selector">
+                    <label class="mode-option active" id="modeAny">
+                        <input type="radio" name="scanMode" value="any" checked>
+                        <i class="fa-solid fa-users"></i>
+                        <span>Any Person</span>
+                    </label>
+                    <label class="mode-option" id="modeSpecific">
+                        <input type="radio" name="scanMode" value="specific">
+                        <i class="fa-solid fa-fingerprint"></i>
+                        <span>Specific Person</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Step 2: Reference (Conditional) -->
+            <div class="control-group" id="referenceSection" style="display: none;">
+                <h3>2. Target Biometrics</h3>
                 <div class="upload-box" id="refBox" onclick="document.getElementById('refInput').click()">
                     <i class="fa-solid fa-user-shield"></i>
-                    <p>Upload Target Faces</p>
-                    <span style="font-size:0.7rem; color:#94a3b8; display:block; margin-top:5px;">Upload 1-5 photos for better accuracy</span>
+                    <p>Upload Face to Match</p>
+                    <span style="font-size:0.7rem; color:#94a3b8; display:block; margin-top:5px;">(Multi-shot supported)</span>
                     <input type="file" id="refInput" multiple accept="image/*">
                 </div>
                 <div id="ref-list" class="ref-list"></div>
                 <p id="ref-status" class="status-msg"></p>
-            </div>
-
-            <!-- Step 2: Tuning -->
-            <div class="control-group">
-                <h3>2. Algorithm Tuning</h3>
-                <div class="slider-container">
-                    <label>Strictness (Euclidean Distance)</label>
+                
+                <!-- Slider only needed for specific matching -->
+                <div class="slider-container" style="margin-top: 15px;">
+                    <label>Strictness (Match Accuracy)</label>
                     <input type="range" id="thresholdRange" min="0.3" max="0.8" step="0.05" value="0.5">
                     <div class="slider-vals">
-                        <span>Strict (0.3)</span>
+                        <span>Strict</span>
                         <span id="thresh-val">0.5</span>
-                        <span>Loose (0.8)</span>
+                        <span>Loose</span>
                     </div>
                 </div>
             </div>
 
-            <!-- Step 3: Batch -->
+            <!-- Step 3: Batch Processing -->
             <div class="control-group">
-                <h3>3. Batch Processing</h3>
+                <h3><span id="stepLabel">2</span>. Batch Dataset</h3>
                 <div class="upload-box" onclick="document.getElementById('batchInput').click()">
                     <i class="fa-solid fa-folder-open"></i>
-                    <p>Select Dataset</p>
+                    <p>Select Photos</p>
                     <input type="file" id="batchInput" multiple accept="image/*">
                 </div>
                 <div id="batch-count" class="batch-count-text"></div>
@@ -80,21 +94,20 @@
                 <div class="stats-grid">
                     <div class="stat-box">
                         <div class="stat-val text-success" id="count-kept">0</div>
-                        <div class="stat-lbl">Positive</div>
+                        <div class="stat-lbl">Kept</div>
                     </div>
                     <div class="stat-box">
                         <div class="stat-val text-danger" id="count-removed">0</div>
-                        <div class="stat-lbl">Negative</div>
+                        <div class="stat-lbl">Discarded</div>
                     </div>
                 </div>
                 
                 <button id="runBtn" class="btn">
-                    <i class="fa-solid fa-microchip"></i> Execute Analysis
+                    <i class="fa-solid fa-microchip"></i> Start Sorting
                 </button>
 
-                <!-- NEW: Export Button (Hidden by default) -->
                 <button id="exportBtn" class="btn btn-export" style="display: none;">
-                    <i class="fa-solid fa-file-zipper"></i> Download Matched (ZIP)
+                    <i class="fa-solid fa-file-zipper"></i> Download Kept (ZIP)
                 </button>
             </div>
         </aside>
@@ -102,11 +115,11 @@
         <div class="content">
             <div class="progress-area" id="progress-area">
                 <div class="progress-header">
-                    <strong>Processing Biometric Queue...</strong>
+                    <strong>Analyzing Queue...</strong>
                     <span id="prog-text">0%</span>
                 </div>
                 <div class="bar-bg"><div class="bar-fill" id="bar-fill"></div></div>
-                <div id="memory-stat" style="font-size:0.7rem; color:#94a3b8; margin-top:5px; text-align:right;">Tensors: 0</div>
+                <div id="status-detail" style="font-size:0.75rem; color:#64748b; margin-top:5px;">Initializing...</div>
             </div>
 
             <div class="gallery" id="gallery"></div>
